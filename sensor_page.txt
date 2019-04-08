@@ -1,0 +1,9 @@
+$ curl http://192.168.2.55/
+<html><meta http-equiv="refresh" content="1">Number of devices: 1
+<br><style>table td {font-size: 38px;}</style><table border='1'>
+<tr><td>Device id</td><td>Temperature</td></tr>
+<tr><td>2824f9bd040000b3</td>
+<td align="center"><b>20.44&degC</b></td></tr>
+
+</table>
+</html>
