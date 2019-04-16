@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
 
+import time
+import threading
 import requests
 from bs4 import BeautifulSoup
-import time
-import matplotlib.pyplot as pp
 import numpy as np
-import datetime
-import threading
 import pandas as pd
 from bokeh.plotting import figure, output_file, show
 from bokeh.models import ColumnDataSource, HoverTool
 
-URL = 'http://192.168.2.55/' #Temperature sensor endpoint
+URL = 'http://192.168.1.18/' #Temperature sensor endpoint
 FILENAME = 'ts_temp.txt'    #file to store temperature data
 
 def genframe():
-    df = pd.read_csv(FILENAME,sep=' ', header=None, names=['Timestamp','Temperature'], parse_dates=['Timestamp'], date_parser=lambda epoch: pd.to_datetime(epoch, unit='s'))
-    smoothed_df = df.set_index('Timestamp').interpolate(method='polynomial',order=3)
-    prev_temp = df['Temperature'].iloc[-1]
+    """Generates the pandas dataframe from the csv file containing temperature data and returns last temperature reading for comparison to update file"""
+    data_frame = pd.read_csv(FILENAME, sep=' ', header=None, names=['Timestamp', 'Temperature'], parse_dates=['Timestamp'], date_parser=lambda epoch: pd.to_datetime(epoch, unit='s'))
+    smoothed_df = data_frame.set_index('Timestamp').interpolate().rolling(window=len(data_frame)//17+1).mean() #Experimentally determined window length to provide appropriate smoothing of the graph, +1 is for conditions where the data frame does not contain enough data hence setting window size to 1
+    prev_temp = data_frame['Temperature'].iloc[-1]
     return(smoothed_df, prev_temp)
-    
-def plot(df):
-    df = df
-    source = ColumnDataSource(df)
+
+def plot(data_frame):
+    """Plots a bokeh chart from the generated dataframe"""
+    data_frame = data_frame
+    source = ColumnDataSource(data_frame)
     output_file("output.html")
 
-    p = figure(plot_width=1200,plot_height=800,sizing_mode='scale_height',x_axis_type='datetime',title=u'Fermentor Temperature \xb0C',tools='pan,wheel_zoom,hover,save,reset')
+    plot_chart = figure(plot_width=1200, plot_height=800, sizing_mode='scale_height', x_axis_type='datetime', title=u'Fermentor Temperature \xb0C', tools='pan,wheel_zoom,hover,save,reset')
 
-    hover = p.select(dict(type=HoverTool))
+    hover = plot_chart.select(dict(type=HoverTool))
     hover.tooltips = [
     ("index", "$index"),
     ('Temperature', u'$y\xb0C'),
@@ -37,25 +37,26 @@ def plot(df):
     'Timestamp' : 'datetime'
     }
 
-    p.line(x='Timestamp',y='Temperature',source=source,line_width=3)
-    show(p)
+    plot_chart.line(x='Timestamp', y='Temperature', source=source, line_width=3)
+    show(plot_chart)
 
 def main():
     #threading to request data in the background while generating plot
-    df, prev_temp = genframe()
-    rt = threading.Thread(target=readtemp(prev_temp))
-    rt.start()
-    plot(df)
+    data_frame, prev_temp = genframe()
+    readtemp_thread = threading.Thread(target=readtemp(prev_temp))
+    readtemp_thread.start()
+    plot(data_frame)
 
 # Reading temp in function to run it in thread because GUI needs to be run in main thread
 def readtemp(prev_temp):
+    """Reads temperature from the ESP8266 endpoint"""
     prev_temp = prev_temp
     try:
-        r = requests.get(URL)
-    except:
+        req_page = requests.get(URL)
+    except():
         cur_temp = np.nan
     else:
-        soup = BeautifulSoup(r.text, 'html.parser')
+        soup = BeautifulSoup(req_page.text, 'html.parser')
         cur_temp = soup.b.string[0:5]
     finally:
         if str(cur_temp) != str(prev_temp): #only write to file if temperature has changed since last reading
