@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 
-import time
-import threading
-import requests
-from bs4 import BeautifulSoup
-import numpy as np
+import sys
+import logging
+import paho.mqtt.client as mqtt
 import pandas as pd
 from bokeh.plotting import figure, output_file, show
 from bokeh.models import ColumnDataSource, HoverTool
 
-URL = 'http://192.168.1.18/' #Temperature sensor endpoint
+
+SUB_TOPIC = "ha/_temperature/#"
+BROKER_IP = "1.2.3.4"
+BROKER_PORT = 1883
+CLIENT_ID = 'pymqtt-client'
 FILENAME = 'ts_temp.txt'    #file to store temperature data
+
+logging.basicConfig(level=logging.INFO, datefmt='%s', filename='runlog.log', filemode='w', format='%(asctime)s %(levelname)s %(funcName)s - %(message)s')
 
 
 def genframe():
@@ -19,18 +23,17 @@ def genframe():
     Returns a smoothed data frame and last temperature reading
     """
     data_frame = pd.read_csv(FILENAME, sep=' ', header=None, names=['Timestamp', 'Temperature'], parse_dates=['Timestamp'], date_parser=lambda epoch: pd.to_datetime(epoch, unit='s'))
-    #Experimentally determined window length to provide appropriate smoothing of the graph, 
+    #Experimentally determined window length to provide appropriate graph smoothing,
     # +1 is for conditions where the data frame does not contain enough data hence setting window size to 1
-    smoothed_df = data_frame.set_index('Timestamp').interpolate().rolling(window=len(data_frame)//17+1).mean() 
-    prev_temp = data_frame['Temperature'].iloc[-1]
-    return(smoothed_df, prev_temp)
+    smoothed_df = data_frame.set_index('Timestamp').interpolate().rolling(window=len(data_frame)//17+1).mean()
+    return smoothed_df
 
 
-def plot(data_frame):
+def plot():
     """
     Plots a bokeh chart from the generated dataframe
     """
-    data_frame = data_frame
+    data_frame = genframe()
     source = ColumnDataSource(data_frame)
     output_file("output.html")
 
@@ -38,44 +41,47 @@ def plot(data_frame):
 
     hover = plot_chart.select(dict(type=HoverTool))
     hover.tooltips = [
-    ("index", "$index"),
-    ('Temperature', u'$y\xb0C'),
-    ('Timestamp', '@Timestamp{%m-%d/%H:%M:%S}')
+        ("index", "$index"),
+        ('Temperature', u'$y\xb0C'),
+        ('Timestamp', '@Timestamp{%m-%d/%H:%M:%S}')
     ]
     hover.formatters = {
-    'Timestamp' : 'datetime'
+        'Timestamp' : 'datetime'
     }
 
     plot_chart.line(x='Timestamp', y='Temperature', source=source, line_width=3)
     show(plot_chart)
 
-def main():
-    #threading to request data in the background while generating plot
-    data_frame, prev_temp = genframe()
-    readtemp_thread = threading.Thread(target=readtemp(prev_temp))
-    readtemp_thread.start()
-    plot(data_frame)
+def readtemp():
+    """ Attempts connection to MQTT broker and
+    subscribes to topic on successful connect
+    """
+    client = mqtt.Client(client_id=CLIENT_ID, clean_session=False)
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.connect(BROKER_IP, BROKER_PORT, 1)
+    client.loop_forever()
 
 
-# Reading temp in function to run it in thread because GUI needs to be run in main thread
-def readtemp(prev_temp):
-    """
-    Reads temperature from the ESP8266 endpoint
-    """
-    prev_temp = prev_temp
-    try:
-        req_page = requests.get(URL)
-    except():
-        cur_temp = np.nan
-    else:
-        soup = BeautifulSoup(req_page.text, 'html.parser')
-        cur_temp = soup.b.string[0:5]
-    finally:
-        if str(cur_temp) != str(prev_temp): #only write to file if temperature has changed since last reading
-            cur_time = int(time.time()) #dropping resolution to 1s, saving 7 bytes a line
-            with open(FILENAME, 'a') as open_file:
-                open_file.write(str(cur_time) + ' ' + str(cur_temp) + '\n')
-            print('Fermentation vessel temperature at', cur_time, 'is', cur_temp, u'\xb0C')
+def on_connect(client, userdata, flags, rc):
+    """ Callback function for MQTT client connection event """
+    logging.info("Connected with result code " + str(rc))
+    client.subscribe(SUB_TOPIC)
+
+
+def on_message(client, userdata, msg):
+    """ Callback function for MQTT client new message event """
+    logging.debug(msg.topic + ' ' + msg.payload.decode('utf-8'))
+    with open(FILENAME, 'a') as open_file:
+        open_file.write(msg.payload.decode('utf-8') + '\n')
+
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 1:
+        print("Call as {0} (read|plot)".format(sys.argv[0]))
+    elif sys.argv[1] == "read":
+        readtemp()
+    elif sys.argv[1] == "plot":
+        plot()
+    else:
+        print("Call as {0} (read|plot)".format(sys.argv[0]))
