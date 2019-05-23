@@ -5,7 +5,8 @@ This is a two part project which runs on an embedded system (ESP8266) and any hi
 
 **File descriptions**
 
-<pre>beermon_plot.py</pre> pulls temperature data from the MQTT broker, writes current data to a file and draws a graph of the present data based on mode the code is run in.
+Pulls temperature data from the MQTT broker, writes current data to a file and draws a graph of the present data based on mode the code is run in.
+<pre>beermon_plot.py</pre> 
 
 e.g. 
 <pre>python3 beermon_plot.py read</pre>
@@ -13,12 +14,14 @@ starts the MQTT listener and runs it asynchronously
 <pre>python3 beermon_plot.py plot</pre>
 generates the graph
 
-<pre>ts_temp.txt</pre> space separated epoch and temperature sample data as collected every 5 seconds
+Space separated epoch and temperature sample data as collected every 5 seconds
+<pre>ts_temp.txt</pre>
 
-<pre>plot.png</pre> sample plot
+Sample plot
+<pre>plot.png</pre>
 
-<pre>beermon_mqtt_client.ino</pre> 
 Code for the ESP8266. Connect the DS18B20 sensor to a pin with an inbuilt pull up resistor to avoid soldering another component. Configure the parameters, and power the board, connecting the RST pin to the GPIO16 (wake up pin) else the board will only post data the first time and then never wake up from deep sleep.
+<pre>beermon_mqtt_client.ino</pre> 
 
 This code has been optimized to improve the power characterstics of the board without adding a lot of extra hacks. It takes an average of ~600 ms to execute everything and go to sleep.
 
